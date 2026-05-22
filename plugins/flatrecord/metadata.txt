@@ -1,0 +1,24 @@
+[general]
+name=FlatRecord
+qgisMinimumVersion=3.0
+description=Open .frb (FlatRecord) files as QGIS vector layers
+about=FlatRecord is a single binary container for tabular records, geospatial features, graphs, or all three. This plugin opens .frb files and converts the feature payload into a standard QGIS in-memory vector layer. See https://github.com/cristianob/flatrecord for the format spec.
+version=1.0.0
+author=Cristiano Costa
+email=cristiano@nexatlas.com
+
+# uncomment when distributing through QGIS Plugin Repository:
+# changelog=
+# tags=
+# homepage=https://github.com/cristianob/flatrecord
+# repository=https://github.com/cristianob/flatrecord
+
+tags=vector,format,binary,flatrecord,frb,flatbuffers
+homepage=https://github.com/cristianob/flatrecord
+tracker=https://github.com/cristianob/flatrecord/issues
+repository=https://github.com/cristianob/flatrecord
+icon=icon.png
+experimental=False
+deprecated=False
+category=Vector
+plugin_dependencies=
