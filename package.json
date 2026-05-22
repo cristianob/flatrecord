@@ -1,0 +1,101 @@
+{
+    "name": "flatrecord",
+    "version": "1.0.0",
+    "description": "Performant binary encoding for structured records: tables, geospatial features, and graphs in a single self-describing file format.",
+    "scripts": {
+        "build": "rm lib -rf && swc ./src/ts -d lib/mjs && mv ./lib/mjs/src/ts/* ./lib/mjs -f && rm ./lib/mjs/src -rf && tsc --emitDeclarationOnly && rollup -c rollup.config.js",
+        "type-check": "tsc --noEmit",
+        "test": "vitest run ./test/unit",
+        "test:watch": "vitest ./test/unit",
+        "coverage": "vitest run --coverage ./test/unit",
+        "typedoc": "typedoc",
+        "fixtures": "tsx script/gen_fixtures.ts",
+        "bench": "tsx bench/run.ts",
+        "test:browser": "playwright test",
+        "prepublishOnly": "pnpm type-check && pnpm test && pnpm build"
+    },
+    "files": [
+        "lib/**/*",
+        "dist/**/*",
+        "LICENSE-flatbush",
+        "!lib/mjs/streams/**"
+    ],
+    "types": "lib/mjs/index.d.ts",
+    "module": "lib/mjs/index.js",
+    "main": "lib/mjs/index.js",
+    "type": "module",
+    "engines": {
+        "node": ">=18"
+    },
+    "exports": {
+        ".": {
+            "types": "./lib/mjs/index.d.ts",
+            "import": "./lib/mjs/index.js",
+            "default": "./lib/mjs/index.js"
+        },
+        "./geojson": {
+            "types": "./lib/mjs/geojson.d.ts",
+            "import": "./lib/mjs/geojson.js",
+            "default": "./lib/mjs/geojson.js"
+        },
+        "./generic": {
+            "types": "./lib/mjs/generic.d.ts",
+            "import": "./lib/mjs/generic.js",
+            "default": "./lib/mjs/generic.js"
+        }
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/cristianob/flatrecord.git"
+    },
+    "keywords": [
+        "tabular",
+        "spatial",
+        "geometry",
+        "feature",
+        "graph",
+        "adjacency-list",
+        "geospatial",
+        "network",
+        "serialization",
+        "binary",
+        "performance"
+    ],
+    "author": "Cristiano Costa <cristiano@nexatlas.com>",
+    "contributors": [
+        "Cristiano Costa <cristiano@nexatlas.com>",
+        "Joel Torres <joel.torres@nexatlas.com>",
+        "Björn Harrtell (FlatGeobuf — origin of the feature codec and R-tree)"
+    ],
+    "license": "BSD-2-Clause",
+    "bugs": {
+        "url": "https://github.com/cristianob/flatrecord/issues"
+    },
+    "homepage": "https://github.com/cristianob/flatrecord#readme",
+    "dependencies": {
+        "@repeaterjs/repeater": "3.0.6",
+        "flatbuffers": "25.9.23",
+        "slice-source": "0.4.1"
+    },
+    "devDependencies": {
+        "@babel/core": "7.28.5",
+        "@babel/preset-env": "7.28.5",
+        "@biomejs/biome": "2.3.10",
+        "@playwright/test": "^1.60.0",
+        "@rollup/plugin-babel": "6.1.0",
+        "@rollup/plugin-node-resolve": "16.0.3",
+        "@rollup/plugin-terser": "0.4.4",
+        "@swc/cli": "0.7.9",
+        "@swc/core": "1.15.7",
+        "@types/geojson": "7946.0.16",
+        "@types/node": "25.0.3",
+        "@types/slice-source": "0.4.3",
+        "@vitest/coverage-v8": "4.0.16",
+        "jsts": "2.12.1",
+        "rollup": "4.53.5",
+        "sirv": "^3.0.2",
+        "typedoc": "0.28.15",
+        "typescript": "5.9.3",
+        "vitest": "4.0.16"
+    }
+}

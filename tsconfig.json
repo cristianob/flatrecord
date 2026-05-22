@@ -1,0 +1,27 @@
+{
+    "compilerOptions": {
+        "module": "ES2022",
+        "moduleResolution": "node",
+        "noImplicitAny": true,
+        "removeComments": true,
+        "preserveConstEnums": true,
+        "strict": true,
+        "declaration": true,
+        "outDir": "./lib/mjs",
+        "sourceMap": true,
+        "target": "ES2023",
+        "allowSyntheticDefaultImports": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "isolatedModules": true,
+        "verbatimModuleSyntax": true
+    },
+    "include": ["src/ts"],
+    "exclude": ["node_modules", "**/*.spec.ts"],
+    "typedocOptions": {
+        "out": "dist/doc",
+        "exclude": ["**/*.spec.ts"],
+        "entryPoints": ["src/ts/flatgeographbuf.ts"],
+        "readme": "none"
+    }
+}

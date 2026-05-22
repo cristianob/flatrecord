@@ -1,0 +1,36 @@
+node_modules
+target
+yarn-error.log
+package-lock.json
+playwright-report
+test-results
+/playwright/.cache
+*.tgz
+/src/c/include/flatcc
+/src/cpp/include/flatbuffers
+/src/cpp/include/mapbox
+/src/cpp/include/rapidjson
+/src/cpp/test/catch.hpp
+/dist
+/lib
+/.vs
+
+# Rust
+Cargo.lock
+
+# .NET
+/src/net/.vs/FlatGeobuf
+/src/net/FlatGeobuf/FlatBuffers
+*.dll
+*.pdb
+*.cache
+obj/
+bin/
+
+# Java
+.settings
+.classpath
+.project
+
+# c++ tester
+testcpp

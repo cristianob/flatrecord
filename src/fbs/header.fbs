@@ -1,0 +1,199 @@
+// =====================================================================
+// FlatRecord wire-format schema.
+//
+// Compatibility contract — read before editing:
+//
+//  1. APPEND-ONLY for table fields. Adding a field at the END of a
+//     `table` is forward-compatible: old readers see the missing slot
+//     as the field's default and ignore it. Inserting a field in the
+//     MIDDLE shifts vtable slot IDs and breaks every reader on the
+//     planet.
+//
+//  2. APPEND-ONLY for enums. Reordering or inserting values changes
+//     the wire encoding of every record that uses the enum.
+//
+//  3. NEVER remove a field. If a field becomes obsolete, leave it in
+//     place (writers can stop writing it; the default kicks in). The
+//     slot ID stays reserved so future fields don't collide.
+//
+//  4. NEVER change a field's type. Width / signedness / table-vs-scalar
+//     are part of the wire contract.
+//
+//  5. Defaults must equal "previously implicit behavior". A new bool
+//     field added today should default to whatever the prior absence
+//     meant. Old files (without the field) will see that default —
+//     don't break their semantics by choosing a hostile default.
+//
+//  6. New block types: add the block's `offset` / `length` ulongs at
+//     the end of `Header` (rule 1) plus a comment describing the
+//     block's byte layout. Old readers see length=0 → "block absent"
+//     and stay happy.
+//
+//  7. Schema changes that violate rules 1-5 require bumping the magic
+//     byte at file offset 3 (currently `0x01`). That's a hard break —
+//     old readers reject the file at `open()`. Do this only when you
+//     genuinely want incompatibility.
+//
+//  8. The hand-maintained `src/ts/fbs/*.ts` files mirror this schema.
+//     When you add a field here, also (in `header.ts`):
+//       - Add a getter at vtable offset `(prev_field_offset + 2)`
+//       - Add `addX` static at slot ID `(prev_slot_id + 1)`
+//       - Bump `startHeader(builder).startObject(N)` to `N + 1`
+//
+//  9. Pinned wire-format fixtures (`test/data/*.frb` + the
+//     `wire-format.spec.ts` byte-offset assertions) will fail loudly
+//     on any layout change. That's a feature: it forces you to be
+//     conscious that you're changing the wire.
+// =====================================================================
+
+namespace FlatGeobuf;
+
+// Geometry type enumeration
+// NOTE: Same as WKB 2D geometry type enumeration. APPEND-ONLY (see rule 2).
+enum GeometryType: ubyte {
+  Unknown = 0,
+  Point = 1,
+  LineString = 2,
+  Polygon = 3,
+  MultiPoint = 4,
+  MultiLineString = 5,
+  MultiPolygon = 6,
+  GeometryCollection = 7,
+  CircularString = 8,
+  CompoundCurve = 9,
+  CurvePolygon = 10,
+  MultiCurve = 11,
+  MultiSurface = 12,
+  Curve = 13,
+  Surface = 14,
+  PolyhedralSurface = 15,
+  TIN = 16,
+  Triangle = 17
+}
+
+// APPEND-ONLY (see rule 2). Each value is encoded by ordinal — never
+// reorder, never reuse a slot.
+enum ColumnType: ubyte {
+  Byte,                         // Signed 8-bit integer
+  UByte,                        // Unsigned 8-bit integer
+  Bool,                         // Boolean
+  Short,                        // Signed 16-bit integer
+  UShort,                       // Unsigned 16-bit integer
+  Int,                          // Signed 32-bit integer
+  UInt,                         // Unsigned 32-bit integer
+  Long,                         // Signed 64-bit integer
+  ULong,                        // Unsigned 64-bit integer
+  Float,                        // Single precision floating point number
+  Double,                       // Double precision floating point number
+  String,                       // UTF8 string
+  Json,                         // General JSON type intended to be application specific
+  DateTime,                     // ISO 8601 date time
+  Binary                        // General binary type intended to be application specific
+}
+
+table Column {
+  name: string (required);      // Column name
+  type: ColumnType;             // Column type
+  title: string;                // Column title
+  description: string;          // Column description (intended for free form long text)
+  width: int = -1;              // Column values expected width (-1 = unknown) (currently only used to indicate the number of characters in strings)
+  precision: int = -1;          // Column values expected precision (-1 = unknown) as defined by SQL
+  scale: int = -1;              // Column values expected scale (-1 = unknown) as defined by SQL
+  nullable: bool = true;        // Column values expected nullability
+  unique: bool = false;         // Column values expected uniqueness
+  primary_key: bool = false;    // Indicates this column has been (part of) a primary key
+  metadata: string;             // Column metadata (intended to be application specific and suggested to be structured fx. JSON)
+}
+
+table Crs {
+  org: string;                  // Case-insensitive name of the defining organization e.g. EPSG or epsg (NULL = EPSG)
+  code: int;                    // Numeric ID of the Spatial Reference System assigned by the organization (0 = unknown)
+  name: string;                 // Human readable name of this SRS
+  description: string;          // Human readable description of this SRS
+  wkt: string;                  // Well-known Text Representation of the Spatial Reference System
+  code_string: string;          // Text ID of the Spatial Reference System assigned by the organization in the (rare) case when it is not an integer and thus cannot be set into code
+}
+
+// Locates a property index block in the file by column name. The block
+// is at [offset, offset+length). length=0 means absent (no index for
+// the column despite being declared at write time — shouldn't happen
+// in practice; readers should treat as absent).
+table ColumnIndexEntry {
+  name: string (required);
+  offset: ulong;
+  length: ulong;
+}
+
+table Header {
+  // ─── Dataset identity (textual, no parsing semantics) ─────────────
+  name: string;                 // Dataset name (short)
+  title: string;                // Dataset title (free-form)
+  description: string;          // Dataset description (free-form, longer text)
+  metadata: string;             // Application-defined metadata (often JSON)
+  timestamp: long = 0;          // Unix time in milliseconds (matches `Date.now()`). 0 = not set.
+
+  // ─── Spatial reference system ─────────────────────────────────────
+  crs: Crs;                     // Applies to feature geometry AND link LineString coords
+
+  // ─── Geometry shape (mode determiners) ────────────────────────────
+  // Together with `links_count > 0` these fields determine the file's
+  // mode: table / geo / graph / geograph.
+  geometry_type: GeometryType;  // Unknown = heterogeneous or absent — distinguish via `has_feature_geometry`
+  has_z: bool = false;          // Z dimension present in geometry
+  has_m: bool = false;          // M dimension present in geometry
+  has_t: bool = false;          // T dimension present in geometry
+  has_tm: bool = false;         // TM dimension present in geometry
+  // `true` when at least one feature carries geometry (`geo` /
+  // `geograph` modes). `false` on tabular (`table` / `graph`) files
+  // where the per-feature `geometry` field is omitted. Defaults to
+  // `true` for round-trip compatibility with FlatGeobuf-style files
+  // (where geometry is always present, even if heterogeneous).
+  has_feature_geometry: bool = true;
+
+  // ─── Feature side: bounds + counts + schema + directory ───────────
+  envelope: [double];           // Bbox of all feature geometries (4 doubles: minX,minY,maxX,maxY)
+  features_count: ulong;        // Number of feature records
+  columns: [Column];            // Feature column schema
+  index_node_size: ushort = 16; // R-tree node size (applies to BOTH feature and link spatial indices)
+  // Absolute byte offsets into the file. length=0 means the block is
+  // absent (e.g. no spatial index → both fields 0).
+  feature_spatial_index_offset: ulong = 0;
+  feature_spatial_index_length: ulong = 0;
+  feature_column_indices: [ColumnIndexEntry];
+  features_offset: ulong = 0;
+  features_length: ulong = 0;
+
+  // ─── Link side: counts + schema + directory ───────────────────────
+  // Populated when the file has links (FlatGraph / FlatGeoGraph modes).
+  links_count: ulong = 0;
+  link_columns: [Column];
+  link_spatial_index_offset: ulong = 0;
+  link_spatial_index_length: ulong = 0;
+  link_column_indices: [ColumnIndexEntry];
+  link_adjacency_index_offset: ulong = 0;
+  link_adjacency_index_length: ulong = 0;
+  // Reverse adjacency CSR: enables O(deg) `incomingLinksOf(v)` lookup.
+  // Block layout when present:
+  //   [csrOffsets: (N+1) × 4B uint32][linkByteOffsets: L × 4B uint32]
+  // where `csrOffsets[v]` is the index into `linkByteOffsets` of the
+  // first incoming link of feature v, and `linkByteOffsets` is sorted
+  // by `link.to` ascending and gives the byte offset (relative to the
+  // start of the links block) of each link. length=0 means absent.
+  link_reverse_adjacency_index_offset: ulong = 0;
+  link_reverse_adjacency_index_length: ulong = 0;
+  links_offset: ulong = 0;
+  links_length: ulong = 0;
+}
+
+// NOTE: a 4-byte CRC32 slot lives OUTSIDE the flatbuffer, immediately
+// after the size-prefixed header bytes:
+//
+//   [Magic 8B][HeaderSize 4B][Header bytes][CRC32 4B][Payload blocks]
+//
+// CRC32 is computed (IEEE 802.3) over the header bytes (the bytes
+// between offset 12 and 12 + header_size). A value of `0` means
+// "writer did not compute". Lives outside the flatbuffer because
+// embedding it inside makes the header size non-stable across the
+// two-pass writer (any value !== default elides differently).
+
+root_type Header;
