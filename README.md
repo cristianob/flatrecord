@@ -1,5 +1,11 @@
 # FlatRecord
 
+[![npm](https://img.shields.io/npm/v/flatrecord.svg)](https://www.npmjs.com/package/flatrecord)
+[![npm downloads](https://img.shields.io/npm/dm/flatrecord.svg)](https://www.npmjs.com/package/flatrecord)
+[![types](https://img.shields.io/npm/types/flatrecord.svg)](https://www.npmjs.com/package/flatrecord)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/flatrecord)](https://bundlephobia.com/package/flatrecord)
+[![license](https://img.shields.io/npm/l/flatrecord.svg)](LICENSE)
+
 A performant binary encoding for **structured records** — tables, geospatial features, connected graphs, or any combination — in a single file format with a streaming-friendly layout.
 
 ## Why FlatRecord?

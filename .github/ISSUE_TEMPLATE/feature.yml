@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a new capability or change in behavior.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: |
+        Lead with the concrete use case, not the proposed API.
+        "I have N records and want X" beats "please add method Y".
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed shape (optional)
+      description: |
+        If you have a concrete API in mind, sketch it. Otherwise leave
+        empty — the use case is what matters.
+      render: typescript
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you considered
+      description: How are you doing this today? What's the friction?
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope of the change
+      options:
+        - New writer option / serialize behavior
+        - New reader method on `FlatRecord`
+        - New wire-format block / index (touches the binary format)
+        - Documentation / DX improvement
+        - Other
+    validations:
+      required: true

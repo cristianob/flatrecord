@@ -1,0 +1,53 @@
+name: Bug report
+description: Something doesn't work the way the docs say it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Describe the bug in one or two sentences. Then add context below.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: |
+        Smallest snippet that triggers the bug. Include the input data
+        and the `serialize` / `deserialize` / `FlatRecord` options you
+        passed. If the bug is in the binary format, attach a `.frb`
+        reproducer and the command that produced it.
+      render: typescript
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: flatrecord version
+      placeholder: "e.g. 1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime
+      placeholder: "Node 20.x / Chrome 120 / Bun 1.x / Deno 1.x / React Native …"
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Stack trace, file size, environment quirks, etc.
