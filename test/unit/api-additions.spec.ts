@@ -436,6 +436,54 @@ describe('header CRC32', () => {
     });
 });
 
+describe('header identity strings (name / title / description / metadata)', () => {
+    it('writer stores nothing by default; reader sees nulls', async () => {
+        const bytes = serialize([{ a: 1 }]);
+        const fr = await FlatRecord.open(bytes);
+        expect(fr.header.name).toBeNull();
+        expect(fr.header.title).toBeNull();
+        expect(fr.header.description).toBeNull();
+        expect(fr.header.metadata).toBeNull();
+    });
+
+    it('writer stores every supplied identity string', async () => {
+        const bytes = serialize([{ a: 1 }], undefined, {
+            name: 'sao_paulo_airports',
+            title: 'Airports of São Paulo state',
+            description: 'Curated subset of OurAirports data, restricted to the SP state polygon and updated quarterly.',
+            metadata: JSON.stringify({ source: 'OurAirports', revision: 142, license: 'CC0-1.0' }),
+        });
+        const fr = await FlatRecord.open(bytes);
+        expect(fr.header.name).toBe('sao_paulo_airports');
+        expect(fr.header.title).toBe('Airports of São Paulo state');
+        expect(fr.header.description?.startsWith('Curated subset')).toBe(true);
+        const meta = JSON.parse(fr.header.metadata!);
+        expect(meta.source).toBe('OurAirports');
+        expect(meta.revision).toBe(142);
+    });
+
+    it('any subset of identity strings can be set independently', async () => {
+        const bytes = serialize([{ a: 1 }], undefined, { title: 'Just a title' });
+        const fr = await FlatRecord.open(bytes);
+        expect(fr.header.title).toBe('Just a title');
+        expect(fr.header.description).toBeNull();
+        expect(fr.header.metadata).toBeNull();
+    });
+
+    it('inspect() reflects identity strings via the header — not as blocks', async () => {
+        const bytes = serialize([{ a: 1 }], undefined, {
+            title: 'X',
+            description: 'Y',
+            metadata: 'Z',
+        });
+        const fr = await FlatRecord.open(bytes);
+        const info = fr.inspect();
+        expect(info.featuresCount).toBe(1);
+        // No "identity" block — strings live inside the header itself.
+        expect(info.blocks.some((b) => b.block.includes('identity'))).toBe(false);
+    });
+});
+
 describe('header timestamp (unix-time-ms)', () => {
     it('writer stores nothing by default; reader sees null', async () => {
         const bytes = serialize([{ a: 1 }]);

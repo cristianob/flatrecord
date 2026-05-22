@@ -49,6 +49,8 @@ export interface HeaderMeta {
     /** Node size used for both feature and link R-trees. */
     indexNodeSize: number;
     crs: CrsMeta | null;
+    /** Dataset short identifier. `null` when the writer didn't set one. */
+    name: string | null;
     title: string | null;
     description: string | null;
     metadata: string | null;
@@ -141,6 +143,7 @@ export function fromByteBuffer(bb: flatbuffers.ByteBuffer): HeaderMeta {
         featuresCount: Number(header.featuresCount()),
         indexNodeSize: header.indexNodeSize(),
         crs: crsMeta,
+        name: header.name(),
         title: header.title(),
         description: header.description(),
         metadata: header.metadata(),

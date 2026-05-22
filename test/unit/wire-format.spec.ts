@@ -49,6 +49,7 @@ describe('magic bytes', () => {
             'table-users.frb',
             'graph-deps.frb',
             'text-search-large.frb',
+            'with-metadata.frb',
         ]) {
             const bytes = readFixture(name);
             expect(bytes.slice(0, 8), `${name} magic`).toEqual(expected);
@@ -105,13 +106,13 @@ describe('pinned block layout — fixtures', () => {
      */
     const PINS: Record<string, PinnedLayout> = {
         'minimal.frb': {
-            fileSize: 260,
+            fileSize: 244,
             // 1 feature, has geometry, no links. The writer skips
             // the R-tree on a 1-feature dataset (no benefit).
             headerCrc32: -1, // -1 = "any non-zero" sentinel; verified separately
             blocks: {
                 featureSpatialIndex: null,
-                featuresBlock: { offset: 180, length: 80 },
+                featuresBlock: { offset: 164, length: 80 },
                 linksBlock: null,
                 linkAdjacencyIndex: null,
                 linkReverseAdjacencyIndex: null,
@@ -119,7 +120,7 @@ describe('pinned block layout — fixtures', () => {
             },
         },
         'table-users.frb': {
-            fileSize: 1096,
+            fileSize: 1088,
             headerCrc32: -1,
             blocks: {
                 // No spatial index on a `table` file.
@@ -134,7 +135,7 @@ describe('pinned block layout — fixtures', () => {
             },
         },
         'graph-deps.frb': {
-            fileSize: 1625,
+            fileSize: 1617,
             headerCrc32: -1,
             blocks: {
                 // `graph` mode: no geometry, has links + CSR + reverse CSR.
@@ -199,6 +200,7 @@ describe('directory ordering invariants', () => {
         'table-users.frb',
         'graph-deps.frb',
         'text-search-large.frb',
+        'with-metadata.frb',
     ];
 
     for (const name of FIXTURES) {

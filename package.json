@@ -1,6 +1,6 @@
 {
     "name": "flatrecord",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Performant binary encoding for structured records: tables, geospatial features, and graphs in a single self-describing file format.",
     "scripts": {
         "build": "rm lib -rf && swc ./src/ts -d lib/mjs && mv ./lib/mjs/src/ts/* ./lib/mjs -f && rm ./lib/mjs/src -rf && tsc --emitDeclarationOnly && rollup -c rollup.config.js",

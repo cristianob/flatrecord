@@ -131,6 +131,21 @@ export interface SerializeOptions {
      *  - omitted   → don't write a timestamp (reader sees `null`)
      */
     timestamp?: number | 'now';
+    /**
+     * Dataset identity strings stored in the header — all optional and
+     * surfaced on the reader side via `fr.header.{name,title,description,metadata}`.
+     * Each one defaults to `null` (i.e. unset) on the reader when the
+     * writer didn't supply it.
+     *
+     *  - `name`        — short identifier
+     *  - `title`       — free-form human-readable title
+     *  - `description` — longer free-form text
+     *  - `metadata`    — application-defined, conventionally a JSON string
+     */
+    name?: string;
+    title?: string;
+    description?: string;
+    metadata?: string;
 }
 
 interface NormalizedOptions {
@@ -143,6 +158,10 @@ interface NormalizedOptions {
     writeHeaderCrc: boolean;
     schema: SchemaSpec | undefined;
     timestamp: number | undefined;
+    name: string | undefined;
+    title: string | undefined;
+    description: string | undefined;
+    metadata: string | undefined;
 }
 
 function normalizeOptions(opts: SerializeOptions | undefined): NormalizedOptions {
@@ -159,6 +178,10 @@ function normalizeOptions(opts: SerializeOptions | undefined): NormalizedOptions
         writeHeaderCrc: opts?.writeHeaderCrc ?? true,
         schema: opts?.schema,
         timestamp,
+        name: opts?.name,
+        title: opts?.title,
+        description: opts?.description,
+        metadata: opts?.metadata,
     };
 }
 
@@ -404,6 +427,10 @@ export function serialize(
         writeHeaderCrc,
         schema,
         timestamp,
+        name,
+        title,
+        description,
+        metadata,
     } = normalizeOptions(options);
     const featureCount = featurecollection.features.length;
     const hasLinks = adjacencyList !== undefined && adjacencyList.links.length > 0;
@@ -495,6 +522,7 @@ export function serialize(
         featuresCount: featureCount,
         indexNodeSize,
         crs: null,
+        name: null,
         title: null,
         description: null,
         metadata: null,
@@ -611,6 +639,10 @@ export function serialize(
         crsCode,
         writeHeaderCrc,
         timestamp,
+        name,
+        title,
+        description,
+        metadata,
         featureSpatialIndex,
         featureColumnIndices,
         featuresBlock,

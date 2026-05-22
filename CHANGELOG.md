@@ -5,6 +5,39 @@ follows [Keep a Changelog](https://keepachangelog.com/). Wire-format
 changes are tracked separately in
 [`doc/format-changelog.md`](doc/format-changelog.md).
 
+## 1.0.1
+
+Fix + feature: identity strings (`name`, `title`, `description`,
+`metadata`) were declared on the writer's internal spec but never
+threaded through `SerializeOptions` or actually written into the
+header. The hardcoded `name: "L1"` is removed; all four fields are
+now optional `serialize` options and surface on `fr.header` as
+`string | null`.
+
+### Added
+
+- `SerializeOptions.{name, title, description, metadata}` — write any
+  subset of the dataset identity strings. Each unset field is `null`
+  on the reader.
+- `HeaderMeta.name` — short identifier surfaced on `fr.header.name`
+  (was previously only readable via raw flatbuffer access).
+- New pinned fixture `test/data/with-metadata.frb` populates every
+  identity field + a frozen timestamp, with dedicated round-trip
+  tests in `fixtures.spec.ts`.
+
+### Changed
+
+- The default value of `header.name` is no longer the hardcoded
+  string `"L1"` — files written by 1.0.0 (which always wrote `"L1"`)
+  still open fine; the writer just no longer emits `"L1"` when no
+  `name` is supplied.
+
+### Fixture sizes
+
+All fixtures shrink by 8 bytes (no more `"L1"` literal in the
+header). `minimal.frb`: 260 → 244 B, `table-users.frb`: 1096 → 1088,
+`graph-deps.frb`: 1625 → 1617.
+
 ## 1.0.0 — Initial release
 
 FlatRecord is a single binary container that adapts to four shapes of

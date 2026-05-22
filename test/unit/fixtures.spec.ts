@@ -360,3 +360,63 @@ describe('text-search-large.frb fixture (text search performance)', () => {
         expect(ms).toBeLessThan(500);
     });
 });
+
+describe('with-metadata.frb fixture (every header identity field set)', () => {
+    it('reads `name` verbatim', async () => {
+        const fr = await FlatRecord.open(readFixture('with-metadata.frb'));
+        expect(fr.header.name).toBe('fixtures.metadata.demo');
+    });
+
+    it('reads `title` verbatim', async () => {
+        const fr = await FlatRecord.open(readFixture('with-metadata.frb'));
+        expect(fr.header.title).toBe('FlatRecord metadata fixture');
+    });
+
+    it('reads `description` verbatim (multi-sentence)', async () => {
+        const fr = await FlatRecord.open(readFixture('with-metadata.frb'));
+        expect(fr.header.description?.startsWith('A tiny tabular file')).toBe(true);
+        expect(fr.header.description?.endsWith('frozen timestamp.')).toBe(true);
+    });
+
+    it('reads `metadata` as the exact JSON string the writer stored', async () => {
+        const fr = await FlatRecord.open(readFixture('with-metadata.frb'));
+        const meta = JSON.parse(fr.header.metadata!);
+        expect(meta.source).toBe('flatrecord/test-fixtures');
+        expect(meta.license).toBe('BSD-2-Clause');
+        expect(meta.tags).toEqual(['demo', 'metadata', 'roundtrip']);
+    });
+
+    it('reads `timestamp` as the pinned millisecond value', async () => {
+        const fr = await FlatRecord.open(readFixture('with-metadata.frb'));
+        expect(fr.header.timestamp).toBe(1_700_000_000_000);
+        // Confirm it round-trips as a proper Date.
+        const d = new Date(fr.header.timestamp!);
+        expect(d.toISOString()).toBe('2023-11-14T22:13:20.000Z');
+    });
+
+    it('content rows still round-trip alongside the metadata', async () => {
+        const result = await deserialize(readFixture('with-metadata.frb'));
+        if (result.mode !== 'table' && result.mode !== 'graph') throw new Error('expected tabular');
+        expect(result.rows).toEqual([
+            { id: 'r1', label: 'Alpha' },
+            { id: 'r2', label: 'Beta' },
+        ]);
+    });
+
+    it('declared column index works on a metadata-rich file', async () => {
+        const fr = await FlatRecord.open(readFixture('with-metadata.frb'));
+        const out: string[] = [];
+        for await (const hit of fr.findFeaturesByText('label', 'alpha')) {
+            out.push((hit.feature.properties as { id: string }).id);
+        }
+        expect(out).toEqual(['r1']);
+    });
+
+    it('inspect() shows the metadata-rich file is still a table', async () => {
+        const fr = await FlatRecord.open(readFixture('with-metadata.frb'));
+        const info = fr.inspect();
+        expect(info.mode).toBe('table');
+        expect(info.featuresCount).toBe(2);
+        expect(info.crc32.verified).toBe(true);
+    });
+});

@@ -31,6 +31,7 @@ export interface FileBuildSpec {
     featuresCount: number;
     indexNodeSize: number;
     crsCode: number;
+    name?: string | null;
     title?: string | null;
     description?: string | null;
     metadata?: string | null;
@@ -94,7 +95,12 @@ function buildColumnIndexEntries(
 function buildHeader(spec: FileBuildSpec, offsets: OffsetMap): Uint8Array {
     const builder = new flatbuffers.Builder();
 
-    const nameOffset = builder.createString('L1');
+    // Identity strings — only written when supplied (defaults are null
+    // in flatbuffer, returned as null by the reader).
+    const nameOffset = spec.name ? builder.createString(spec.name) : 0;
+    const titleOffset = spec.title ? builder.createString(spec.title) : 0;
+    const descriptionOffset = spec.description ? builder.createString(spec.description) : 0;
+    const metadataOffset = spec.metadata ? builder.createString(spec.metadata) : 0;
 
     let columnOffsets: number | undefined;
     if (spec.columns && spec.columns.length > 0) {
@@ -142,7 +148,10 @@ function buildHeader(spec: FileBuildSpec, offsets: OffsetMap): Uint8Array {
     Header.addIndexNodeSize(builder, spec.indexNodeSize);
     if (envelopeOffset !== undefined) Header.addEnvelope(builder, envelopeOffset);
     if (columnOffsets !== undefined) Header.addColumns(builder, columnOffsets);
-    Header.addName(builder, nameOffset);
+    if (nameOffset) Header.addName(builder, nameOffset);
+    if (titleOffset) Header.addTitle(builder, titleOffset);
+    if (descriptionOffset) Header.addDescription(builder, descriptionOffset);
+    if (metadataOffset) Header.addMetadata(builder, metadataOffset);
     // Unix-time-in-ms timestamp (optional). 0 = "not set" / elided.
     if (spec.timestamp !== undefined && spec.timestamp !== 0) {
         Header.addTimestamp(builder, BigInt(Math.trunc(spec.timestamp)));

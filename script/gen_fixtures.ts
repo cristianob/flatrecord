@@ -282,4 +282,30 @@ mkdirSync(OUT_DIR, { recursive: true });
     console.log(`✓ graph-deps.frb      ${bytes.byteLength} bytes`);
 }
 
+// ─── Fixture 9: with-metadata.frb ─────────────────────────────────────
+// All four identity strings + an explicit timestamp populated, so we
+// can verify on a pinned file that the reader extracts every header
+// field correctly. Frozen timestamp keeps the fixture byte-stable.
+{
+    const rows: Row[] = [
+        { id: 'r1', label: 'Alpha' },
+        { id: 'r2', label: 'Beta' },
+    ];
+    const bytes = serialize(rows, undefined, {
+        name: 'fixtures.metadata.demo',
+        title: 'FlatRecord metadata fixture',
+        description:
+            'A tiny tabular file used by the test suite to verify that every header identity string round-trips correctly. Two rows, one indexed column, frozen timestamp.',
+        metadata: JSON.stringify({
+            source: 'flatrecord/test-fixtures',
+            license: 'BSD-2-Clause',
+            tags: ['demo', 'metadata', 'roundtrip'],
+        }),
+        timestamp: 1_700_000_000_000,  // 2023-11-14T22:13:20.000Z — pinned
+        writeColumnIndex: { features: ['id', 'label'] },
+    });
+    writeFileSync(resolve(OUT_DIR, 'with-metadata.frb'), bytes);
+    console.log(`✓ with-metadata.frb   ${bytes.byteLength} bytes`);
+}
+
 console.log(`\nFixtures written to ${OUT_DIR}`);
