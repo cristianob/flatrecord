@@ -139,7 +139,11 @@ export function fromByteBuffer(bb: flatbuffers.ByteBuffer): HeaderMeta {
         geometryType: header.geometryType(),
         hasFeatureGeometry: header.hasFeatureGeometry(),
         columns: readColumns(header, header.columnsLength(), 'columns'),
-        envelope: header.envelopeLength() > 0 ? header.envelopeArray() : null,
+        // Copy out (not a view): the envelope is tiny metadata, and a
+        // `subarray` view would pin the whole source buffer alive — which
+        // would defeat `preload({ detach: true })` and needlessly retain a
+        // region of the source in the cold-reader path too.
+        envelope: header.envelopeLength() > 0 ? header.envelopeArray()!.slice() : null,
         featuresCount: Number(header.featuresCount()),
         indexNodeSize: header.indexNodeSize(),
         crs: crsMeta,

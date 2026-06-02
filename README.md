@@ -298,6 +298,8 @@ Six optional indices, all enabled by default when applicable:
 
 A reader opens the file with **one range read** (the header carries a directory of every block's offset and length, plus a CRC32 over the header for early-failure detection on corrupted files) and then fetches only the bytes it actually needs — even over HTTP. A reader that wants the whole dataset in memory calls `preload()` and pays a single round trip.
 
+When many datasets are kept resident at once, `preload({ detach: true })` copies the small index/links ranges out of the source buffer and releases the byte source, so the whole-file buffer is garbage-collected — leaving only the decoded feature cache and the compact indices in memory. Every query is still served from those caches; the trade-off is that a detached instance can no longer fetch uncached bytes (the cache-clearing `release*()` methods throw, and re-reading requires re-opening the file).
+
 For bulk operations, `getFeatures([…indices])` / `getLinks([…indices])` coalesce adjacent byte ranges into single reads — important on remote files where N round-trips would otherwise dominate. `fr.inspect()` returns a structured snapshot of the directory + per-block sizes for diagnostics.
 
 ## Cross-cutting patterns

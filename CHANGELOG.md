@@ -5,6 +5,50 @@ follows [Keep a Changelog](https://keepachangelog.com/). Wire-format
 changes are tracked separately in
 [`doc/format-changelog.md`](doc/format-changelog.md).
 
+## 1.0.2
+
+Memory feature + packaging fix. A preloaded reader can now release its
+source buffer entirely (keeping only the decoded caches + compact
+indices), which matters when many datasets are held resident at once.
+Subpath imports (`flatrecord/geojson`, `flatrecord/generic`) now also
+resolve under bundlers that don't read package `exports`.
+
+### Added
+
+- **`preload({ detach: true })`** — copies the retained index/links
+  byte ranges out of the source buffer (instead of holding `subarray`
+  views over it) and releases the underlying `ByteReader`, so the
+  whole-file buffer is garbage-collected. Only the decoded feature
+  cache and the small index copies stay resident; every query is still
+  served from those caches. The new `PreloadOptions` type is exported.
+  Default (`preload()`) is unchanged — zero-copy views, buffer retained.
+- **Classic-resolver subpath entry points** — `geojson.js` /
+  `geojson.d.ts` and `generic.js` / `generic.d.ts` at the package root
+  re-export the built modules. Bundlers that follow `exports` are
+  unaffected (they keep using the `exports` map); resolvers that don't
+  (e.g. Metro with `unstable_enablePackageExports` off) now resolve
+  `flatrecord/geojson` with no per-app configuration.
+
+### Changed
+
+- `getLinks([…])` (bulk) is served from the resident links section
+  after `preload()` instead of issuing a reader round-trip, so it works
+  on a detached instance (matching the existing `getLink(i)` behaviour).
+- `release()` / `releaseFeatures()` / `releaseLinks()` /
+  `releaseIndices()` / `releasePropertyIndices()` now throw on a
+  detached instance: a detached reader has no byte source to rebuild a
+  cleared cache from, so clearing one would leave it silently broken.
+  Drop all references to the instance to free its memory, and re-open
+  the file if you need it again.
+
+### Fixed
+
+- `fr.header.envelope` was a `Float64Array` **view** over the header
+  bytes, which kept the whole source buffer alive — defeating
+  `preload({ detach: true })` and needlessly retaining a slice of the
+  source on the cold-reader path. It is now copied out, so `header`
+  never pins the source buffer. Values are unchanged.
+
 ## 1.0.1
 
 Fix + feature: identity strings (`name`, `title`, `description`,

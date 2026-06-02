@@ -49,6 +49,11 @@ test/
 └── smoke.browser.spec.ts     # Playwright spec
 doc/                 # User-facing markdown (format-spec, api-reference, …)
 bench/               # Performance benchmarks (see below)
+geojson.js + .d.ts   # Root re-export shims for `flatrecord/geojson`
+generic.js + .d.ts   #   and `flatrecord/generic` — mirror the `exports`
+                     #   subpaths so bundlers that don't read `exports`
+                     #   (e.g. Metro's classic resolver) still resolve them.
+                     #   Add a matching pair + a `files` entry for any new subpath.
 ```
 
 ## Wire-format changes

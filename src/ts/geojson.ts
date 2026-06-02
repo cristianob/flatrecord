@@ -35,6 +35,7 @@ export {
     type FeatureLookup,
     type DistanceUnit,
     type NearestFeaturesOptions,
+    type PreloadOptions,
     type FlatRecordInspect,
     type FlatRecordBlockInfo,
 } from './flat-record.js';

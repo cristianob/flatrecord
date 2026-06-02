@@ -479,6 +479,27 @@ fr.release();                  // give memory back
 
 > **Remote caveat.** `preload` transfers essentially the entire file. Use only when the data fits in memory and you intend to query enough of it. For multi-gigabyte files keep relying on lazy methods; `loadIndices()` is a useful middle ground (R-trees in memory, payloads still lazy).
 
+### Holding many datasets resident: `preload({ detach: true })`
+
+A plain `preload()` keeps the in-memory caches as zero-copy **views** over the source buffer, so the whole-file buffer stays alive for the reader's lifetime. When you keep **many** readers resident at once (say, hundreds of cached files), those buffers add up — each one a redundant copy of the payload that's already decoded in the feature cache.
+
+`preload({ detach: true })` copies the (small) indices out of the source buffer and releases it, so it's garbage-collected:
+
+```typescript
+const fr = await FlatRecord.open(byteReaderFromUint8Array(bytes));
+await fr.preload({ detach: true });
+// `bytes` / the source buffer can now be collected; only the decoded
+// feature cache + compact index copies stay resident.
+
+// All queries still work, entirely from caches — no further I/O:
+for await (const { feature } of fr.nearestFeatures([-46.6, -23.5], { limit: 5 })) { /* … */ }
+for await (const hit of fr.findFeaturesByText('name', 'rio')) { /* … */ }
+```
+
+A detached reader is **sealed** — it can't fetch uncached bytes, so the `release*` methods throw on it (they'd clear a cache it can't rebuild). To free a detached reader, drop every reference to it and re-open the file if you need it again. Use `detach` with a full `preload()` (not partial `load*` calls) so nothing is left unloaded.
+
+> **Importing subpaths.** `flatrecord/geojson` and `flatrecord/generic` are exposed via the package's `exports` map and also as plain entry files at the package root, so they resolve whether or not your bundler reads `exports` (e.g. Metro's classic resolver) — no per-app resolver configuration needed.
+
 ## Diagnostics: `inspect()` + CRC32
 
 ```typescript

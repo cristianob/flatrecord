@@ -69,6 +69,21 @@ function mergePropertyIndex(into: PropertyIndex, from: PropertyIndex): void {
 }
 
 /**
+ * Reader installed in place of the real byte source by
+ * `preload({ detach: true })`. The source buffer has been released, so any
+ * read that escaped the in-memory caches is a wrong assumption by the
+ * caller — fail loudly instead of returning bogus bytes.
+ */
+const DETACHED_READER: ByteReader = {
+    read(): never {
+        throw new Error(
+            'FlatRecord: reader detached by preload({ detach: true }); all data is ' +
+                'served from in-memory caches. Re-open the file to read uncached data.',
+        );
+    },
+};
+
+/**
  * In-memory random-access reader over a FlatRecord file backed by an arbitrary
  * `ByteReader`. The constructor (`open`) parses only the FlatRecord header — every
  * subsequent piece (features, links, indices) is located via the header's
@@ -960,6 +975,7 @@ export class FlatRecord {
 
     /** Drop both cached property index trees. */
     releasePropertyIndices(): void {
+        this.assertReloadable('releasePropertyIndices');
         this.featurePropertyIndex = EMPTY_PROP_INDEX();
         this.linkPropertyIndex = EMPTY_PROP_INDEX();
         this.loadedFeatureCols.clear();
@@ -1096,16 +1112,22 @@ export class FlatRecord {
      * When the byte source provides `readAll()` we use it; otherwise we
      * compute the file's total length from the directory and issue one
      * range read covering every block.
+     *
+     * Pass `{ detach: true }` to also release the source buffer once the
+     * caches are built (see {@link PreloadOptions.detach}).
      */
-    async preload(): Promise<void> {
-        if (this.reader.readAll) {
-            const all = await this.reader.readAll();
-            this.populateAllCachesFromFullBuffer(all);
-            return;
+    async preload(options: PreloadOptions = {}): Promise<void> {
+        const detach = options.detach ?? false;
+        const all = this.reader.readAll
+            ? await this.reader.readAll()
+            : await this.reader.read(0, this.computeTotalLength());
+        this.populateAllCachesFromFullBuffer(all, detach);
+        if (detach) {
+            // The reader closure is the last reference to the source buffer
+            // (index ranges were copied out above, features are already
+            // copied), so dropping it lets `all` be collected on return.
+            (this as { reader: ByteReader }).reader = DETACHED_READER;
         }
-        const totalLen = this.computeTotalLength();
-        const all = await this.reader.read(0, totalLen);
-        this.populateAllCachesFromFullBuffer(all);
     }
 
     private computeTotalLength(): number {
@@ -1126,28 +1148,37 @@ export class FlatRecord {
         return end;
     }
 
-    private populateAllCachesFromFullBuffer(all: Uint8Array): void {
+    private populateAllCachesFromFullBuffer(all: Uint8Array, detach = false): void {
         const h = this.header;
+        // Retained ranges: copy them out (`slice`) when detaching so the
+        // source buffer isn't pinned by `subarray` views, otherwise keep
+        // zero-copy views over the buffer the caller still holds. Features
+        // are copied by `parseFeatureBytes` either way, so the features
+        // section stays a transient view below.
+        const take = detach
+            ? (start: number, end: number): Uint8Array => all.slice(start, end)
+            : (start: number, end: number): Uint8Array => all.subarray(start, end);
+
         if (h.featureSpatialIndex.length > 0) {
-            this.featureSpatialIndexBytes = all.subarray(
+            this.featureSpatialIndexBytes = take(
                 h.featureSpatialIndex.offset,
                 h.featureSpatialIndex.offset + h.featureSpatialIndex.length,
             );
         }
         if (h.linkSpatialIndex.length > 0) {
-            this.linkSpatialIndexBytes = all.subarray(
+            this.linkSpatialIndexBytes = take(
                 h.linkSpatialIndex.offset,
                 h.linkSpatialIndex.offset + h.linkSpatialIndex.length,
             );
         }
         if (h.linkAdjacencyIndex.length > 0) {
-            this.linkAdjacencyIndexBytes = all.subarray(
+            this.linkAdjacencyIndexBytes = take(
                 h.linkAdjacencyIndex.offset,
                 h.linkAdjacencyIndex.offset + h.linkAdjacencyIndex.length,
             );
         }
         if (h.linkReverseAdjacencyIndex.length > 0) {
-            this.linkReverseAdjacencyIndexBytes = all.subarray(
+            this.linkReverseAdjacencyIndexBytes = take(
                 h.linkReverseAdjacencyIndex.offset,
                 h.linkReverseAdjacencyIndex.offset + h.linkReverseAdjacencyIndex.length,
             );
@@ -1171,7 +1202,7 @@ export class FlatRecord {
         }
 
         if (h.linksBlock.length > 0) {
-            const linksBytes = all.subarray(
+            const linksBytes = take(
                 h.linksBlock.offset,
                 h.linksBlock.offset + h.linksBlock.length,
             );
@@ -1181,32 +1212,63 @@ export class FlatRecord {
             }
         }
 
+        // `parsePropertyIndexBlock` keeps `subarray` views over the block it's
+        // given, so the block must be a standalone copy when detaching.
         for (const e of h.featureColumnIndices) {
             if (this.loadedFeatureCols.has(e.column)) continue;
-            const block = all.subarray(e.offset, e.offset + e.length);
+            const block = take(e.offset, e.offset + e.length);
             const parsed = parsePropertyIndexBlock(block);
             mergePropertyIndex(this.featurePropertyIndex, parsed);
             this.loadedFeatureCols.add(e.column);
         }
         for (const e of h.linkColumnIndices) {
             if (this.loadedLinkCols.has(e.column)) continue;
-            const block = all.subarray(e.offset, e.offset + e.length);
+            const block = take(e.offset, e.offset + e.length);
             const parsed = parsePropertyIndexBlock(block);
             mergePropertyIndex(this.linkPropertyIndex, parsed);
             this.loadedLinkCols.add(e.column);
         }
     }
 
+    /** True once {@link preload}`({ detach: true })` has released the byte
+     *  source. Such an instance answers every query from caches and can no
+     *  longer fetch uncached bytes. */
+    private get detached(): boolean {
+        return this.reader === DETACHED_READER;
+    }
+
+    /** Guard for cache-clearing methods. A detached instance has no byte
+     *  source to rebuild from, so clearing a cache would leave it silently
+     *  broken — refuse loudly instead. */
+    private assertReloadable(op: string): void {
+        if (this.detached) {
+            throw new Error(
+                `FlatRecord: ${op}() is unavailable after preload({ detach: true }) — the byte ` +
+                    `source was released, so cleared caches cannot be rebuilt. Drop all references ` +
+                    `to this instance to free its memory, and re-open the file if you need it again.`,
+            );
+        }
+    }
+
+    /**
+     * Drop every cache, returning to a cold reader that re-fetches on demand.
+     * Unavailable after {@link preload}`({ detach: true })` — a detached
+     * instance has no byte source to rebuild from, so it (and the other
+     * `release*` methods) throws instead of leaving itself half-dead.
+     */
     release(): void {
+        this.assertReloadable('release');
         this.releaseFeatures();
         this.releaseLinks();
         this.releaseIndices();
         this.releasePropertyIndices();
     }
     releaseFeatures(): void {
+        this.assertReloadable('releaseFeatures');
         this.featureCache.clear();
     }
     releaseLinks(): void {
+        this.assertReloadable('releaseLinks');
         this.outgoingLinksCache.clear();
         this.incomingLinksCache.clear();
         this.linkCache.clear();
@@ -1214,6 +1276,7 @@ export class FlatRecord {
         this.linksSectionBytes = null;
     }
     releaseIndices(): void {
+        this.assertReloadable('releaseIndices');
         this.featureSpatialIndexBytes = null;
         this.linkSpatialIndexBytes = null;
         this.linkAdjacencyIndexBytes = null;
@@ -1443,6 +1506,17 @@ export class FlatRecord {
         pairs.sort((a, b) => a.off - b.off);
         if (pairs.length === 0) return;
 
+        // When the links block is resident (after preload / preload-detach),
+        // serve from it via readLinkAt — no reader round-trips, and keeps bulk
+        // reads working once the byte source has been detached.
+        if (this.linksSectionBytes !== null) {
+            for (const { idx, off } of pairs) {
+                const { link } = await this.readLinkAt(off);
+                this.linkCache.set(idx, link);
+            }
+            return;
+        }
+
         const block = this.header.linksBlock;
         const columns = this.header.linkColumns;
         const SPEC = 512;
@@ -1531,6 +1605,21 @@ const DISTANCE_SCALE: Record<DistanceUnit, number> = {
     kilometers: 1 / 1000,
     nautical_miles: 1 / 1852,
 };
+
+export interface PreloadOptions {
+    /**
+     * Copy the retained index/link byte ranges out of the source buffer
+     * (instead of holding `subarray` views over it) and release the
+     * underlying `ByteReader`, so the source buffer can be garbage-collected.
+     * Leaves only the decoded feature cache and the compact index copies
+     * resident — useful when many datasets are kept in memory at once and the
+     * whole-file buffers would otherwise add up. Trades a slightly higher
+     * transient peak during the load (source buffer and index copies briefly
+     * coexist) for a smaller steady-state footprint. After detaching, every
+     * query is served from caches; any operation that needs an uncached
+     * `read()` throws — re-open the file to read again. Default: `false`. */
+    detach?: boolean;
+}
 
 export interface NearestFeaturesOptions {
     /** Output distance unit. Default: `'meters'`. */

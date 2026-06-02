@@ -16,6 +16,7 @@ For a task-oriented overview see [usage-examples.md](usage-examples.md). For the
 | `byteReaderFromUrl(url, opts?)` | factory | Wrap an HTTP URL (Range requests + readAll). |
 | `SerializeOptions` / `PropertyIndexSpec` / `SchemaSpec` / `ColumnSpec` | types | Writer flags + optional explicit schema. |
 | `DistanceUnit` / `NearestFeaturesOptions` | types | Options for `nearestFeatures`. |
+| `PreloadOptions` | type | Options for `preload` (`{ detach }` releases the source buffer). |
 | `FlatRecordInspect` / `FlatRecordBlockInfo` | types | Structured snapshot returned by `fr.inspect()`. |
 | `ShortestPathOptions` / `ShortestPathResult` | types | Pathfinding I/O. |
 | `LinkWeightFn` / `HeuristicFn` | types | Pluggable cost/heuristic. |
@@ -376,10 +377,33 @@ All read methods populate caches on the way. Eager helpers let you front-load th
 | `loadIndices()` | 1 read per R-tree / CSR present | feature + link R-tree byte caches + adjacency CSR | many spatial queries on a remote file |
 | `loadFeatureColumnIndex(name)` / `loadLinkColumnIndex(name)` | 1 read | one column's property index | querying only that column |
 | `loadPropertyIndices()` | 1 read per declared column (parallel) | every property index | bulk warmup before many `findBy*` queries |
-| `preload()` | 1 request (via `readAll`) or 1 range read covering all blocks | everything | small / medium files that fit in memory |
+| `preload(options?)` | 1 request (via `readAll`) or 1 range read covering all blocks | everything | small / medium files that fit in memory |
 | `release()` / `releaseFeatures()` / `releaseLinks()` / `releaseIndices()` / `releasePropertyIndices()` | no | one cache (or all) | reclaim memory between batches |
 
 > **Caveat for remote sources.** `preload` and the individual `load*` methods transfer essentially the entire file. Use them only when the data fits in memory and you intend to query enough of it that the upfront cost pays off. For multi-gigabyte remote files keep relying on the lazy methods; `loadIndices()` is a useful middle ground (R-trees in memory, payloads still lazy).
+
+#### `preload({ detach })` — drop the source buffer, keep the caches
+
+```typescript
+interface PreloadOptions {
+    detach?: boolean; // default false
+}
+
+await fr.preload({ detach: true });
+```
+
+By default `preload()` keeps the retained index/links ranges as zero-copy `subarray` **views** over the source buffer. That's cheapest when the buffer is short-lived or you opened from a `ByteReader` that owns it — but it means **the whole-file buffer stays alive** for as long as the reader does (any one view pins the entire backing `ArrayBuffer`).
+
+`preload({ detach: true })` instead **copies** those ranges into their own small buffers and swaps the reader for a sentinel, so the source buffer becomes unreachable and is garbage-collected. What stays resident:
+
+- the decoded feature cache (built by `preload` either way), and
+- compact standalone copies of the spatial / adjacency / property indices.
+
+Every query is still served from those caches — `getFeature`, `nearestFeatures`, `featuresInBbox`, `findFeaturesByText/Value`, `getLink(s)`, `outgoing/incomingLinksOf`, `shortestPath`, etc. all work with no further I/O.
+
+Use it when **many datasets are kept resident at once** (e.g. hundreds of cached files): dropping each whole-file buffer removes a large, redundant copy of the payload — the encoded bytes are no longer needed once the features are decoded. The trade-off is a slightly higher transient peak during the load (the source buffer and the index copies briefly coexist) in exchange for a smaller steady-state footprint.
+
+A detached instance is **sealed**: it can no longer fetch uncached bytes. The `release*` methods therefore throw on it (clearing a cache it can't rebuild would leave it broken) — to free a detached instance, drop all references to it (and re-open the file if you need it again). Pair `detach` with a full `preload` (the default), not partial `load*` calls, so nothing is left unloaded.
 
 ### `fr.inspect()`
 
