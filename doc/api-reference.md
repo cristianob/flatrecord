@@ -227,6 +227,7 @@ class FlatRecord {
         point: readonly [number, number],
         options?: NearestFeaturesOptions,
     ): AsyncGenerator<{ feature: IGeoJsonFeature; distance: number; index: number }>;
+    getFeatureBbox(index: number): Promise<Rect | null>;  // R-tree envelope, no geometry decode
 
     // Link access
     getLink(storageIdx: number): Promise<Link>;
@@ -263,7 +264,7 @@ class FlatRecord {
     inspect(): FlatRecordInspect;   // directory + sizes + indices snapshot
 
     // Eager cache warmup
-    loadFeatures(): Promise<IGeoJsonFeature[]>;
+    loadFeatures(options?: { bbox?: boolean }): Promise<IGeoJsonFeature[]>;
     loadLinks(): Promise<void>;
     loadIndices(): Promise<void>;
     loadFeatureColumnIndex(name: string): Promise<PropertyIndex>;
@@ -295,6 +296,7 @@ class FlatRecord {
 | `features()` | `AsyncGenerator<IGeoJsonFeature>` | nothing | Yields every feature in storage order. |
 | `featuresInBbox(rect)` | `AsyncGenerator<IGeoJsonFeature>` | `writeSpatialIndex: true` + geometry | Spatial filter. Throws on `table` / `graph` files (no geometry). |
 | `nearestFeatures(point, opts?)` | `AsyncGenerator<{ feature, distance, index }>` | `writeSpatialIndex: true` + geometry | Best-first KNN over R-tree. See [`nearestFeatures`](#nearestfeatures-point-options) below. |
+| `getFeatureBbox(i)` | `Promise<Rect \| null>` | `writeSpatialIndex: true` + geometry | Per-feature bounding box `{ minX, minY, maxX, maxY }`, read straight from the R-tree leaf — **no geometry decode**. `null` when the file has no feature spatial index. Throws on out-of-range `i`. Matches the feature `getFeature(i)` returns. |
 
 ### Link methods
 
@@ -372,13 +374,15 @@ All read methods populate caches on the way. Eager helpers let you front-load th
 
 | Method | Issues I/O | Touches | Use when |
 | --- | --- | --- | --- |
-| `loadFeatures()` | 1 bulk read | feature cache | querying most/all features |
+| `loadFeatures(opts?)` | 1 bulk read | feature cache | querying most/all features |
 | `loadLinks()` | 2 parallel reads | per-feature outgoing-links cache + links-block + adjacency CSR | traversing a meaningful slice of the graph |
 | `loadIndices()` | 1 read per R-tree / CSR present | feature + link R-tree byte caches + adjacency CSR | many spatial queries on a remote file |
 | `loadFeatureColumnIndex(name)` / `loadLinkColumnIndex(name)` | 1 read | one column's property index | querying only that column |
 | `loadPropertyIndices()` | 1 read per declared column (parallel) | every property index | bulk warmup before many `findBy*` queries |
 | `preload(options?)` | 1 request (via `readAll`) or 1 range read covering all blocks | everything | small / medium files that fit in memory |
 | `release()` / `releaseFeatures()` / `releaseLinks()` / `releaseIndices()` / `releasePropertyIndices()` | no | one cache (or all) | reclaim memory between batches |
+
+`loadFeatures({ bbox: true })` additionally attaches each feature's stored bounding box (`feature.bbox = [minX, minY, maxX, maxY]`, standard GeoJSON) read from the R-tree — no geometry walk. Handy when you keep the properties + envelope in JS but render geometry elsewhere. Throws if the file has no feature spatial index.
 
 > **Caveat for remote sources.** `preload` and the individual `load*` methods transfer essentially the entire file. Use them only when the data fits in memory and you intend to query enough of it that the upfront cost pays off. For multi-gigabyte remote files keep relying on the lazy methods; `loadIndices()` is a useful middle ground (R-trees in memory, payloads still lazy).
 

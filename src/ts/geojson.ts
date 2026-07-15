@@ -40,6 +40,7 @@ export {
     type FlatRecordBlockInfo,
 } from './flat-record.js';
 export type { SchemaSpec, ColumnSpec } from './geojson/featurecollection.js';
+export type { Rect } from './packedrtree.js';
 export { byteReaderFromUint8Array, byteReaderFromUrl, type ByteReader, type UrlReaderOptions } from './byte-reader.js';
 export type { LinkWeightFn, HeuristicFn, ShortestPathOptions, ShortestPathResult } from './shortest-path.js';
 

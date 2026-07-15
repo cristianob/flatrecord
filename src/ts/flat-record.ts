@@ -289,6 +289,37 @@ export class FlatRecord {
     }
 
     /**
+     * Bounding box of feature `index`, read straight from its R-tree leaf
+     * node — **no geometry is decoded**. `[minX, minY, maxX, maxY]` is stored
+     * per feature in the packed Hilbert R-tree, so this is a cheap constant-time
+     * lookup (a single 32-byte read, served from the in-memory index when
+     * preloaded).
+     *
+     * Returns `null` when the file has no feature spatial index (nothing to read
+     * the box from — recompute it from the geometry if you need it). Throws for
+     * an out-of-range index.
+     *
+     * The box matches the feature returned by {@link getFeature} for the same
+     * `index` (both address the same storage slot), regardless of any
+     * Hilbert reordering applied at serialize time.
+     */
+    async getFeatureBbox(index: number): Promise<Rect | null> {
+        if (index < 0 || index >= this.header.featuresCount) {
+            throw new Error(`Feature index out of range: ${index} (have ${this.header.featuresCount})`);
+        }
+        if (this.header.featureSpatialIndex.length === 0) return null;
+        const nodeOffset = this.featureLeafNodeOffset(index);
+        const bytes = await this.fetchRTreeBytes(nodeOffset, 32);
+        const dv = new DataView(bytes.buffer, bytes.byteOffset, 32);
+        return {
+            minX: dv.getFloat64(0, true),
+            minY: dv.getFloat64(8, true),
+            maxX: dv.getFloat64(16, true),
+            maxY: dv.getFloat64(24, true),
+        };
+    }
+
+    /**
      * Materialize the entire dataset, returning the same discriminated
      * `DeserializeResult` shape as the top-level `deserialize()`
      * function: `{ mode: 'geo' | 'geograph', features, adjacencyList }`
@@ -314,29 +345,30 @@ export class FlatRecord {
      * cache. Single bulk range request over the features block.
      * Idempotent.
      */
-    async loadFeatures(): Promise<IGeoJsonFeature[]> {
+    async loadFeatures(options?: { bbox?: boolean }): Promise<IGeoJsonFeature[]> {
         const fc = this.header.featuresCount;
         const all: IGeoJsonFeature[] = new Array(fc);
         if (fc === 0) return all;
 
         if (this.featureCache.size === fc) {
             for (let i = 0; i < fc; i++) all[i] = this.featureCache.get(i) as IGeoJsonFeature;
-            return all;
+        } else {
+            const sectionBytes = await this.reader.read(
+                this.header.featuresBlock.offset,
+                this.header.featuresBlock.length,
+            );
+            let cursor = 0;
+            for (let i = 0; i < fc; i++) {
+                const size = new DataView(sectionBytes.buffer, sectionBytes.byteOffset + cursor).getUint32(0, true);
+                const featureBytes = sectionBytes.subarray(cursor, cursor + SIZE_PREFIX_LEN + size);
+                const feature = parseFeatureBytes(featureBytes, this.header, i);
+                all[i] = feature;
+                this.featureCache.set(i, feature);
+                cursor += SIZE_PREFIX_LEN + size;
+            }
         }
 
-        const sectionBytes = await this.reader.read(
-            this.header.featuresBlock.offset,
-            this.header.featuresBlock.length,
-        );
-        let cursor = 0;
-        for (let i = 0; i < fc; i++) {
-            const size = new DataView(sectionBytes.buffer, sectionBytes.byteOffset + cursor).getUint32(0, true);
-            const featureBytes = sectionBytes.subarray(cursor, cursor + SIZE_PREFIX_LEN + size);
-            const feature = parseFeatureBytes(featureBytes, this.header, i);
-            all[i] = feature;
-            this.featureCache.set(i, feature);
-            cursor += SIZE_PREFIX_LEN + size;
-        }
+        if (options?.bbox) await this.attachBboxes(all);
         return all;
     }
 
@@ -1564,6 +1596,27 @@ export class FlatRecord {
             this.header.featureSpatialIndex.offset + offsetIntoTree,
             length,
         );
+    }
+
+    /** Tree-relative byte offset of the R-tree leaf node for feature `index`.
+     *  Leaves occupy the bottom level (one per feature, in storage order). */
+    private featureLeafNodeOffset(index: number): number {
+        const totalNodes = this.header.featureSpatialIndex.length / NODE_ITEM_BYTE_LEN;
+        const firstLeafByteOffset = (totalNodes - this.header.featuresCount) * NODE_ITEM_BYTE_LEN;
+        return firstLeafByteOffset + index * NODE_ITEM_BYTE_LEN;
+    }
+
+    /** Attach each feature's stored bbox (`[minX, minY, maxX, maxY]`) in place,
+     *  read from the R-tree without decoding geometry. Used by
+     *  `loadFeatures({ bbox: true })`. */
+    private async attachBboxes(features: IGeoJsonFeature[]): Promise<void> {
+        if (this.header.featureSpatialIndex.length === 0) {
+            throw new Error('Cannot attach bbox: file has no feature spatial index. Re-serialize with writeSpatialIndex: true.');
+        }
+        for (let i = 0; i < features.length; i++) {
+            const r = await this.getFeatureBbox(i);
+            if (r) features[i].bbox = [r.minX, r.minY, r.maxX, r.maxY];
+        }
     }
 
     private async featureOffsetViaSpatialIndex(index: number): Promise<number> {

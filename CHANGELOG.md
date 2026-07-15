@@ -5,6 +5,28 @@ follows [Keep a Changelog](https://keepachangelog.com/). Wire-format
 changes are tracked separately in
 [`doc/format-changelog.md`](doc/format-changelog.md).
 
+## 1.1.0
+
+New spatial-index reader API: read a feature's bounding box without
+decoding its geometry.
+
+### Added
+
+- **`getFeatureBbox(index)`** — returns a feature's bounding box
+  (`{ minX, minY, maxX, maxY }`, the exported `Rect` type) read straight
+  from its packed R-tree leaf node, **without decoding the geometry**. A
+  constant-time 32-byte lookup, served from the in-memory index after
+  `preload`. Returns `null` when the file has no feature spatial index;
+  throws on an out-of-range index. Useful when you need per-feature
+  extents (framing, label anchoring, "properties + envelope, geometry
+  rendered elsewhere") but not the coordinates. `Rect` is now also
+  re-exported from the `flatrecord/geojson` entry point.
+- **`loadFeatures({ bbox: true })`** — bulk-loads every feature and
+  attaches its stored box as standard GeoJSON `feature.bbox`
+  (`[minX, minY, maxX, maxY]`), read from the R-tree with no geometry
+  walk. Throws if the file has no feature spatial index. Plain
+  `loadFeatures()` is unchanged.
+
 ## 1.0.2
 
 Memory feature + packaging fix. A preloaded reader can now release its

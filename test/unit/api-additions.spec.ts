@@ -577,3 +577,158 @@ describe('schema validation (explicit)', () => {
         ).toThrow(/expected number/);
     });
 });
+
+describe('getFeatureBbox(index)', () => {
+    const geojson = {
+        type: 'FeatureCollection' as const,
+        features: [
+            {
+                type: 'Feature' as const,
+                geometry: {
+                    type: 'Polygon' as const,
+                    coordinates: [
+                        [
+                            [-46, -23],
+                            [-44, -23],
+                            [-44, -21],
+                            [-46, -21],
+                            [-46, -23],
+                        ],
+                    ],
+                },
+                properties: { id: 'A' },
+            },
+            {
+                type: 'Feature' as const,
+                geometry: { type: 'Point' as const, coordinates: [-47.9, -15.8] },
+                properties: { id: 'B' },
+            },
+            {
+                type: 'Feature' as const,
+                geometry: {
+                    type: 'MultiPolygon' as const,
+                    coordinates: [
+                        [
+                            [
+                                [10, 10],
+                                [12, 10],
+                                [12, 13],
+                                [10, 13],
+                                [10, 10],
+                            ],
+                        ],
+                    ],
+                },
+                properties: { id: 'C' },
+            },
+        ],
+    };
+
+    // Ground-truth envelope over a decoded feature's own geometry — ordering- and
+    // quantization-agnostic (compares the R-tree box against the same coords the
+    // reader returns).
+    const envelopeOf = (feature: { geometry: { coordinates: unknown } }) => {
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        const walk = (node: any): void => {
+            if (typeof node[0] === 'number') {
+                const [x, y] = node as [number, number];
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
+                return;
+            }
+            for (const child of node) walk(child);
+        };
+        walk(feature.geometry.coordinates);
+        return { minX, minY, maxX, maxY };
+    };
+
+    it('returns each feature stored bbox, matching its geometry envelope', async () => {
+        const fr = await FlatRecord.open(serialize(geojson));
+        const feats = await fr.loadFeatures();
+        for (let i = 0; i < feats.length; i++) {
+            const box = await fr.getFeatureBbox(i);
+            const exp = envelopeOf(feats[i]);
+            expect(box).not.toBeNull();
+            expect(box!.minX).toBeCloseTo(exp.minX, 6);
+            expect(box!.minY).toBeCloseTo(exp.minY, 6);
+            expect(box!.maxX).toBeCloseTo(exp.maxX, 6);
+            expect(box!.maxY).toBeCloseTo(exp.maxY, 6);
+        }
+    });
+
+    it('throws on out-of-range index', async () => {
+        const fr = await FlatRecord.open(serialize(geojson));
+        await expect(fr.getFeatureBbox(99)).rejects.toThrow(/out of range/);
+        await expect(fr.getFeatureBbox(-1)).rejects.toThrow(/out of range/);
+    });
+
+    it('returns null when the file has no feature spatial index', async () => {
+        const fr = await FlatRecord.open(serialize(geojson, undefined, { writeSpatialIndex: false }));
+        expect(await fr.getFeatureBbox(0)).toBeNull();
+    });
+
+    it('still works after preload({ detach: true }) (served from cached index bytes)', async () => {
+        const fr = await FlatRecord.open(serialize(geojson));
+        await fr.preload({ detach: true });
+        const box = await fr.getFeatureBbox(0);
+        expect(box).not.toBeNull();
+        expect(box!.minX).toBeCloseTo(-46, 6);
+        expect(box!.maxY).toBeCloseTo(-21, 6);
+    });
+});
+
+describe('loadFeatures({ bbox: true })', () => {
+    const geojson = {
+        type: 'FeatureCollection' as const,
+        features: [
+            {
+                type: 'Feature' as const,
+                geometry: {
+                    type: 'Polygon' as const,
+                    coordinates: [
+                        [
+                            [-46, -23],
+                            [-44, -23],
+                            [-44, -21],
+                            [-46, -21],
+                            [-46, -23],
+                        ],
+                    ],
+                },
+                properties: { id: 'A' },
+            },
+            {
+                type: 'Feature' as const,
+                geometry: { type: 'Point' as const, coordinates: [-47.9, -15.8] },
+                properties: { id: 'B' },
+            },
+        ],
+    };
+
+    it('attaches [minX, minY, maxX, maxY] to every feature, matching getFeatureBbox', async () => {
+        const fr = await FlatRecord.open(serialize(geojson));
+        const feats = await fr.loadFeatures({ bbox: true });
+        for (const f of feats) {
+            expect(Array.isArray(f.bbox)).toBe(true);
+            expect(f.bbox).toHaveLength(4);
+        }
+        const box0 = await fr.getFeatureBbox(0);
+        expect(feats[0].bbox).toEqual([box0!.minX, box0!.minY, box0!.maxX, box0!.maxY]);
+    });
+
+    it('leaves bbox undefined when the option is omitted', async () => {
+        const fr = await FlatRecord.open(serialize(geojson));
+        const feats = await fr.loadFeatures();
+        expect(feats[0].bbox).toBeUndefined();
+    });
+
+    it('throws when the file has no feature spatial index', async () => {
+        const fr = await FlatRecord.open(serialize(geojson, undefined, { writeSpatialIndex: false }));
+        await expect(fr.loadFeatures({ bbox: true })).rejects.toThrow(/spatial index/);
+    });
+});

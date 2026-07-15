@@ -163,6 +163,11 @@ for await (const f of fr.featuresInBbox(sp)) {
     console.log(f.properties.iata, f.properties.name);
 }
 
+// Per-feature envelope straight from the R-tree — no geometry decode.
+const box = await fr.getFeatureBbox(0);   // { minX, minY, maxX, maxY } | null
+// …or attach it to every feature as standard GeoJSON `bbox`:
+const withBoxes = await fr.loadFeatures({ bbox: true });   // f.bbox = [minX, minY, maxX, maxY]
+
 // Text search composes with spatial.
 for await (const hit of fr.findFeaturesByText('name', 'galeao')) {
     console.log(hit.feature.properties.iata);   // 'GIG'
@@ -289,7 +294,7 @@ Six optional indices, all enabled by default when applicable:
 
 | Index | What it unlocks | Modes |
 | --- | --- | --- |
-| Feature spatial R-tree | `featuresInBbox(rect)`, `nearestFeatures(point)` | `geo`, `geograph` |
+| Feature spatial R-tree | `featuresInBbox(rect)`, `nearestFeatures(point)`, `getFeatureBbox(i)` | `geo`, `geograph` |
 | Adjacency CSR | `outgoingLinksOf(v)`, `outDegreeOf(v)`, `linkIndexBetween(from, to)`, `shortestPath()` | `graph`, `geograph` |
 | Reverse adjacency CSR | `incomingLinksOf(v)`, `inDegreeOf(v)` | `graph`, `geograph` |
 | Link spatial R-tree | `linksInBbox(rect)` | `graph`, `geograph` |
